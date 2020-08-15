@@ -17,26 +17,25 @@ On OS X:
 brew install libcec
 ```
 
-Ubuntu:
+Ubuntu, Debian and Raspbian:
 ```
 sudo apt-get install libcec-dev build-essential python-dev
-```
-Note: because Ubuntu ships an older version of libcec that lacks the ToggleMute function, that function will also be missing in python-cec
-
-Rasbian:
-
-I've done a custom build of a more recent libcec with Raspberry Pi support.
-```
-wget http://packages.namniart.com/repos/namniart.key -O - | sudo apt-key add -
-sudo sh -c 'echo "deb http://packages.namniart.com/repos/pi wheezy main" > /etc/apt/sources.list.d/libcec.list'
-sudo apt-get update
-sudo apt-get install python-dev build-essential libcec-dev cec-utils
 ```
 
 ### Install from PIP
 
 ```
 pip install cec
+```
+
+### Installing on Windows
+
+You need to [build libcec](https://github.com/Pulse-Eight/libcec/blob/master/docs/README.windows.md) from source, because libcec installer doesn't provide *cec.lib* that is necessary for linking.
+
+Then you just need to set up your paths, e.g.:
+```
+set INCLUDE=path_to_libcec\build\amd64\include
+set LIB=path_to_libcec\build\amd64
 ```
 
 ## Getting Started
@@ -117,11 +116,18 @@ cec.set_port(device, port)
 # set arbitrary active source (in this case 2.0.0.0)
 destination = cec.CECDEVICE_BROADCAST
 opcode = cec.CEC_OPCODE_ACTIVE_SOURCE
-parameters = bytes([0x20, 0x00])
+parameters = b'\x20\x00'
 cec.transmit(destination, opcode, parameters)
 ```
 
 ## Changelog
+
+### 0.2.7 ( 2018-11-09 )
+* Implement cec.EVENT_COMMAND callback
+* Fix several crashes/memory leaks related to callbacks
+* Add possibility to use a method as a callback
+* Limit maximum number of parameters passed to transmit()
+* Fix compilation error with GCC >= 8
 
 ### 0.2.6 ( 2017-11-03 )
 * Python 3 support ( @nforro )

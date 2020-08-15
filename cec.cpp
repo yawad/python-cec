@@ -30,6 +30,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <libcec/cec.h>
+#include <algorithm>
 #include <list>
 
 #include "device.h"
@@ -103,7 +104,7 @@ using namespace CEC;
 #define HAVE_CEC_ADAPTER_DESCRIPTOR 0
 #endif
 
-int parse_physical_addr(char * addr) {
+int parse_physical_addr(const char * addr) {
    int a, b, c, d;
    if( sscanf(addr, "%x.%x.%x.%x", &a, &b, &c, &d) == 4 ) {
       if( a > 0xF || b > 0xF || c > 0xF || d > 0xF ) return -1;
@@ -156,7 +157,7 @@ std::list<CEC_ADAPTER_TYPE> get_adapters() {
       dev_list = (CEC_ADAPTER_TYPE*)realloc(dev_list, 
          cec_count * sizeof(CEC_ADAPTER_TYPE));
       count = CEC_adapter->CEC_FIND_ADAPTERS(dev_list, cec_count);
-      count = std::min(count, cec_count);
+      count = (std::min)(count, cec_count);
    }
 
    for( int i=0; i<count; i++ ) {
@@ -347,7 +348,8 @@ static PyObject * remove_callback(PyObject * self, PyObject * args) {
      }
      
   }
-  return NULL;
+  Py_INCREF(Py_None);
+  return Py_None;
 }
 
 static PyObject * make_bound_method_args(PyObject * self, PyObject * args) {
@@ -428,6 +430,13 @@ static PyObject * transmit(PyObject * self, PyObject * args) {
          &params, &param_count) ) {
       if( destination < 0 || destination > 15 ) {
          PyErr_SetString(PyExc_ValueError, "Logical address must be between 0 and 15");
+         return NULL;
+      }
+      if( param_count > CEC_MAX_DATA_PACKET_SIZE ) {
+         char errstr[1024];
+         snprintf(errstr, 1024, "Too many parameters, maximum is %d",
+            CEC_MAX_DATA_PACKET_SIZE);
+         PyErr_SetString(PyExc_ValueError, errstr);
          return NULL;
       }
       cec_command data;
@@ -519,7 +528,7 @@ static PyObject * set_stream_path(PyObject * self, PyObject * args) {
          }
 #if PY_MAJOR_VERSION >= 3
       } else if(PyUnicode_Check(arg)) {
-         char * arg_s = PyUnicode_AsUTF8(arg);
+         const char * arg_s = PyUnicode_AsUTF8(arg);
 #else
       } else if(PyString_Check(arg)) {
          char * arg_s = PyString_AsString(arg);
@@ -603,14 +612,22 @@ PyObject * set_port(PyObject * self, PyObject * args) {
 
 PyObject * can_persist_config(PyObject * self, PyObject * args) {
    if( PyArg_ParseTuple(args, ":can_persist_config") ) {
+#if CEC_LIB_VERSION_MAJOR >= 5
+      RETURN_BOOL(CEC_adapter->CanSaveConfiguration());
+#else
       RETURN_BOOL(CEC_adapter->CanPersistConfiguration());
+#endif
    }
    return NULL;
 }
 
 PyObject * persist_config(PyObject * self, PyObject * args) {
    if( PyArg_ParseTuple(args, ":persist_config") ) {
+#if CEC_LIB_VERSION_MAJOR >= 5
+      if( ! CEC_adapter->CanSaveConfiguration() ) {
+#else
       if( ! CEC_adapter->CanPersistConfiguration() ) {
+#endif
          PyErr_SetString(PyExc_NotImplementedError,
                "Cannot persist configuration");
          return NULL;
@@ -620,7 +637,11 @@ PyObject * persist_config(PyObject * self, PyObject * args) {
          PyErr_SetString(PyExc_IOError, "Could not get configuration");
          return NULL;
       }
+#if CEC_LIB_VERSION_MAJOR >= 5
+      RETURN_BOOL(CEC_adapter->SetConfiguration(&config));
+#else
       RETURN_BOOL(CEC_adapter->PersistConfiguration(&config));
+#endif
    }
    return NULL;
 }
