@@ -26,6 +26,7 @@
 // request the std format macros
 #define __STDC_FORMAT_MACROS
 
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <stdlib.h>
 #include <inttypes.h>
@@ -244,9 +245,10 @@ static PyObject * init(PyObject * self, PyObject * args) {
          Py_INCREF(Py_None);
          result = Py_None;
       } else {
+         Py_BEGIN_ALLOW_THREADS
          CECDestroy(CEC_adapter);
          CEC_adapter = NULL;
-
+         Py_END_ALLOW_THREADS
          char errstr[1024];
          snprintf(errstr, 1024, "CEC failed to open %s", dev);
          PyErr_SetString(PyExc_IOError, errstr);
@@ -254,6 +256,18 @@ static PyObject * init(PyObject * self, PyObject * args) {
    }
 
    return result;
+}
+
+static PyObject * close(PyObject * self, PyObject * args) {
+
+   if( CEC_adapter != NULL ) {
+      Py_BEGIN_ALLOW_THREADS
+      CEC_adapter->Close();
+      Py_END_ALLOW_THREADS
+   }
+
+   Py_INCREF(Py_None);
+   return Py_None;
 }
 
 static PyObject * list_devices(PyObject * self, PyObject * args) {
@@ -330,7 +344,7 @@ static PyObject * add_callback(PyObject * self, PyObject * args) {
 
 static PyObject * remove_callback(PyObject * self, PyObject * args) {
   PyObject * callback;
-  long int events = EVENT_ALL; // default to all events
+  Py_ssize_t events = EVENT_ALL; // default to all events
 
   if( PyArg_ParseTuple(args, "O|i:remove_callback", &callback, &events) ) {
      for( cb_list::iterator itr = callbacks.begin(); 
@@ -364,7 +378,7 @@ static PyObject * make_bound_method_args(PyObject * self, PyObject * args) {
    assert(self != NULL);
    Py_INCREF(self);
    PyTuple_SetItem(result, 0, self);
-   for( int i=0; i<count; i++ ) {
+   for( Py_ssize_t i=0; i<count; i++ ) {
       PyObject * arg = PyTuple_GetItem(args, i);
       if( arg == NULL ) {
          Py_DECREF(result);
@@ -421,16 +435,25 @@ static PyObject * trigger_event(long int event, PyObject * args) {
 }
 
 static PyObject * transmit(PyObject * self, PyObject * args) {
+   unsigned char initiator = 'g';
    unsigned char destination;
    unsigned char opcode;
    const char * params = NULL;
-   int param_count = 0;
+   Py_ssize_t param_count = 0;
 
-   if( PyArg_ParseTuple(args, "bb|s#:transmit", &destination, &opcode,
-         &params, &param_count) ) {
+   if( PyArg_ParseTuple(args, "bb|s#b:transmit", &destination, &opcode,
+         &params, &param_count, &initiator) ) {
       if( destination < 0 || destination > 15 ) {
          PyErr_SetString(PyExc_ValueError, "Logical address must be between 0 and 15");
          return NULL;
+      }
+      if( initiator != 'g' ) {
+         if( initiator < 0 || initiator > 15 ) {
+            PyErr_SetString(PyExc_ValueError, "Logical address must be between 0 and 15");
+            return NULL;
+         }
+      } else {
+         initiator = CEC_adapter->GetLogicalAddresses().primary;
       }
       if( param_count > CEC_MAX_DATA_PACKET_SIZE ) {
          char errstr[1024];
@@ -442,12 +465,12 @@ static PyObject * transmit(PyObject * self, PyObject * args) {
       cec_command data;
       bool success;
       Py_BEGIN_ALLOW_THREADS
-      data.initiator = CEC_adapter->GetLogicalAddresses().primary;
+      data.initiator = (cec_logical_address)initiator;
       data.destination = (cec_logical_address)destination;
       data.opcode = (cec_opcode)opcode;
       data.opcode_set = 1;
       if( params ) {
-         for( int i=0; i<param_count; i++ ) {
+         for( Py_ssize_t i=0; i<param_count; i++ ) {
             data.PushBack(((uint8_t *)params)[i]);
          }
       }
@@ -649,6 +672,7 @@ PyObject * persist_config(PyObject * self, PyObject * args) {
 static PyMethodDef CecMethods[] = {
    {"list_adapters", list_adapters, METH_VARARGS, "List available adapters"},
    {"init", init, METH_VARARGS, "Open an adapter"},
+   {"close", close, METH_NOARGS, "Close an adapter"},
    {"list_devices", list_devices, METH_VARARGS, "List devices"},
    {"add_callback", add_callback, METH_VARARGS, "Add a callback"},
    {"remove_callback", remove_callback, METH_VARARGS, "Remove a callback"},
